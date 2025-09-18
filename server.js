@@ -4,22 +4,22 @@ const path = require("path");
 
 const app = express();
 
-// ✅ Serve static files (CSS, JS, images, etc.)
-app.use(express.static(path.join(__dirname)));
+// ✅ Serve static files from current directory
+app.use(express.static(__dirname));
 
-// ✅ API test route (optional, good for debugging)
+// ✅ API route (for testing backend)
 app.get("/api/test", (req, res) => {
   res.json({ message: "✅ Backend is working!" });
 });
 
-// ✅ Catch-all route: only send index.html if the request is not for a file
+// ✅ Catch-all route (only for SPA routes, not files)
 app.get("*", (req, res) => {
-  if (req.path.includes(".")) {
-    // If URL looks like a file (e.g. .css, .js), don't hijack it
+  // If the request has a file extension (.css, .js, .png), skip
+  if (path.extname(req.path)) {
     res.status(404).end();
-  } else {
-    res.sendFile(path.join(__dirname, "index.html"));
+    return;
   }
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 const PORT = process.env.PORT || 3000;
