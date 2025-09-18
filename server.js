@@ -4,12 +4,22 @@ const path = require("path");
 
 const app = express();
 
-// Serve static files
+// ✅ Serve static files (CSS, JS, images, etc.)
 app.use(express.static(path.join(__dirname)));
 
-// Catch-all route (works fine in Express 4)
+// ✅ API test route (optional, good for debugging)
+app.get("/api/test", (req, res) => {
+  res.json({ message: "✅ Backend is working!" });
+});
+
+// ✅ Catch-all route: only send index.html if the request is not for a file
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+  if (req.path.includes(".")) {
+    // If URL looks like a file (e.g. .css, .js), don't hijack it
+    res.status(404).end();
+  } else {
+    res.sendFile(path.join(__dirname, "index.html"));
+  }
 });
 
 const PORT = process.env.PORT || 3000;
