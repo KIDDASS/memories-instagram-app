@@ -1,4 +1,4 @@
-// server.js - Vercel Serverless Compatible
+// server.js - Debug Version with Connection Logging
 const express = require("express");
 const path = require("path");
 const mongoose = require("mongoose");
@@ -6,10 +6,10 @@ const mongoose = require("mongoose");
 const app = express();
 app.use(express.json());
 
-// Serve static files from public directory (Vercel expects this structure)
+// Serve static files from public directory
 app.use(express.static(path.join(__dirname, "public")));
 
-// Memory Schema (inline since Vercel has issues with relative imports)
+// Memory Schema
 const memorySchema = new mongoose.Schema({
   user_id: { type: Number, required: true },
   username: { type: String, required: true },
@@ -30,14 +30,11 @@ const memorySchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now }
 });
 
-// Add indexes for better performance
-memorySchema.index({ created_at: -1 });
-memorySchema.index({ user_id: 1 });
-
 let Memory;
 let isConnected = false;
+let connectionError = null;
 
-// MongoDB connection function
+// Enhanced MongoDB connection function with detailed logging
 async function connectDB() {
   if (isConnected) {
     return;
@@ -45,34 +42,74 @@ async function connectDB() {
 
   try {
     const mongoUri = process.env.MONGODB_URI;
+    
+    console.log("=== MongoDB Connection Debug ===");
+    console.log("Environment check:", process.env.MONGODB_URI ? "MONGODB_URI exists" : "MONGODB_URI missing");
+    
     if (!mongoUri) {
-      console.log("No MONGODB_URI found, API will return errors (app works in demo mode)");
+      connectionError = "MONGODB_URI environment variable not found";
+      console.log("Error: No MONGODB_URI found");
       return;
     }
 
-    await mongoose.connect(mongoUri);
+    // Mask password for logging
+    const maskedUri = mongoUri.replace(/:([^@]+)@/, ':***@');
+    console.log("Attempting connection to:", maskedUri);
+    
+    // Set connection timeout
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000, // 5 second timeout
+      socketTimeoutMS: 45000,
+    });
+    
     Memory = mongoose.model("Memory", memorySchema);
     isConnected = true;
-    console.log("✅ Connected to MongoDB");
+    connectionError = null;
+    console.log("✅ Successfully connected to MongoDB");
+    
   } catch (error) {
-    console.error("❌ MongoDB connection error:", error.message);
+    console.error("❌ MongoDB connection failed:");
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error code:", error.code);
+    connectionError = error.message;
     isConnected = false;
   }
 }
 
-// --- API endpoints ---
-
-// Health check endpoint
+// Enhanced health check with detailed info
 app.get("/api/health", async (req, res) => {
   await connectDB();
+  
   res.json({ 
     status: "ok", 
     message: "Server is running",
-    database: isConnected ? "connected" : "disconnected"
+    database: isConnected ? "connected" : "disconnected",
+    mongodb_uri_exists: !!process.env.MONGODB_URI,
+    connection_error: connectionError,
+    mongoose_ready_state: mongoose.connection.readyState,
+    environment_vars_count: Object.keys(process.env).length,
+    node_version: process.version
   });
 });
 
-// Get all memories (newest first)
+// Debug endpoint to check environment variables (without exposing sensitive data)
+app.get("/api/debug", async (req, res) => {
+  const envVars = Object.keys(process.env);
+  const mongoUriExists = process.env.MONGODB_URI ? true : false;
+  const mongoUriLength = process.env.MONGODB_URI ? process.env.MONGODB_URI.length : 0;
+  
+  res.json({
+    environment_variables_available: envVars.length,
+    mongodb_uri_exists: mongoUriExists,
+    mongodb_uri_length: mongoUriLength,
+    has_vercel_env: process.env.VERCEL ? true : false,
+    connection_attempts: connectionError ? 1 : 0,
+    last_error: connectionError
+  });
+});
+
+// Get all memories
 app.get("/api/memories", async (req, res) => {
   try {
     await connectDB();
@@ -80,7 +117,8 @@ app.get("/api/memories", async (req, res) => {
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
         error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
+        message: "App is running in demo mode using localStorage",
+        connection_error: connectionError
       });
     }
 
@@ -90,7 +128,7 @@ app.get("/api/memories", async (req, res) => {
     console.error("Error fetching memories:", err);
     res.status(500).json({ 
       error: "Failed to fetch memories",
-      message: "Database error - app will use localStorage instead"
+      message: err.message
     });
   }
 });
@@ -103,20 +141,19 @@ app.post("/api/memories", async (req, res) => {
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
         error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
+        message: "App is running in demo mode using localStorage",
+        connection_error: connectionError
       });
     }
 
     const { title, description, image_url, username, user_id } = req.body;
     
-    // Validation
     if (!title || !image_url || !username || !user_id) {
       return res.status(400).json({ 
         error: "title, image_url, username, and user_id are required" 
       });
     }
 
-    // Create new memory
     const memory = new Memory({ 
       title: title.trim(), 
       description: description ? description.trim() : '', 
@@ -132,7 +169,7 @@ app.post("/api/memories", async (req, res) => {
     res.status(201).json(memory);
   } catch (err) {
     console.error("Error creating memory:", err);
-    res.status(500).json({ error: "Failed to create memory" });
+    res.status(500).json({ error: "Failed to create memory", details: err.message });
   }
 });
 
@@ -144,7 +181,7 @@ app.delete("/api/memories/:id", async (req, res) => {
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
         error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
+        connection_error: connectionError
       });
     }
 
@@ -155,7 +192,7 @@ app.delete("/api/memories/:id", async (req, res) => {
     res.json({ ok: true, message: "Memory deleted successfully" });
   } catch (err) {
     console.error("Error deleting memory:", err);
-    res.status(500).json({ error: "Delete failed" });
+    res.status(500).json({ error: "Delete failed", details: err.message });
   }
 });
 
@@ -167,7 +204,7 @@ app.post("/api/memories/:id/like", async (req, res) => {
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
         error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
+        connection_error: connectionError
       });
     }
 
@@ -186,11 +223,9 @@ app.post("/api/memories/:id/like", async (req, res) => {
     const hasLiked = memory.likedBy.includes(userIdNum);
 
     if (hasLiked) {
-      // Unlike
       memory.likedBy = memory.likedBy.filter(id => id !== userIdNum);
       memory.likes = Math.max(0, memory.likes - 1);
     } else {
-      // Like
       memory.likedBy.push(userIdNum);
       memory.likes = memory.likes + 1;
     }
@@ -199,82 +234,15 @@ app.post("/api/memories/:id/like", async (req, res) => {
     res.json(memory);
   } catch (err) {
     console.error("Error toggling like:", err);
-    res.status(500).json({ error: "Like operation failed" });
+    res.status(500).json({ error: "Like operation failed", details: err.message });
   }
 });
 
-// Add comment to memory
-app.post("/api/memories/:id/comments", async (req, res) => {
-  try {
-    await connectDB();
-    
-    if (!isConnected || !Memory) {
-      return res.status(503).json({ 
-        error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
-      });
-    }
-
-    const { text, username, userId } = req.body;
-    
-    if (!text || !username || !userId) {
-      return res.status(400).json({ 
-        error: "text, username, and userId are required" 
-      });
-    }
-    
-    const memory = await Memory.findById(req.params.id);
-    if (!memory) {
-      return res.status(404).json({ error: "Memory not found" });
-    }
-
-    const comment = {
-      userId: parseInt(userId),
-      username: username.trim(),
-      text: text.trim(),
-      created_at: new Date()
-    };
-
-    memory.comments.push(comment);
-    await memory.save();
-    
-    res.status(201).json(comment);
-  } catch (err) {
-    console.error("Error adding comment:", err);
-    res.status(500).json({ error: "Failed to add comment" });
-  }
-});
-
-// Get memory by id
-app.get("/api/memories/:id", async (req, res) => {
-  try {
-    await connectDB();
-    
-    if (!isConnected || !Memory) {
-      return res.status(503).json({ 
-        error: "Database not available", 
-        message: "App is running in demo mode using localStorage" 
-      });
-    }
-
-    const memory = await Memory.findById(req.params.id);
-    if (!memory) {
-      return res.status(404).json({ error: "Memory not found" });
-    }
-    res.json(memory);
-  } catch (err) {
-    console.error("Error fetching memory:", err);
-    res.status(500).json({ error: "Failed to fetch memory" });
-  }
-});
-
-// Serve index.html for all non-API routes (SPA support)
+// Serve index.html for all non-API routes
 app.get("*", (req, res) => {
-  // Don't serve HTML for requests with file extensions
   if (path.extname(req.path)) {
     return res.status(404).end();
   }
-  
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
