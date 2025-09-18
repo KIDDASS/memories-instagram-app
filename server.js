@@ -1,10 +1,13 @@
-// server.js - Debug Version with Connection Logging
+// server.js - With payload size limits
 const express = require("express");
 const path = require("path");
 const mongoose = require("mongoose");
 
 const app = express();
-app.use(express.json());
+
+// Set payload size limits for Vercel compatibility
+app.use(express.json({ limit: '10mb' })); // Increased from default 100kb
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, "public")));
@@ -34,7 +37,7 @@ let Memory;
 let isConnected = false;
 let connectionError = null;
 
-// Enhanced MongoDB connection function with detailed logging
+// MongoDB connection function
 async function connectDB() {
   if (isConnected) {
     return;
@@ -43,22 +46,13 @@ async function connectDB() {
   try {
     const mongoUri = process.env.MONGODB_URI;
     
-    console.log("=== MongoDB Connection Debug ===");
-    console.log("Environment check:", process.env.MONGODB_URI ? "MONGODB_URI exists" : "MONGODB_URI missing");
-    
     if (!mongoUri) {
       connectionError = "MONGODB_URI environment variable not found";
-      console.log("Error: No MONGODB_URI found");
       return;
     }
 
-    // Mask password for logging
-    const maskedUri = mongoUri.replace(/:([^@]+)@/, ':***@');
-    console.log("Attempting connection to:", maskedUri);
-    
-    // Set connection timeout
     await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000, // 5 second timeout
+      serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
     
@@ -68,16 +62,13 @@ async function connectDB() {
     console.log("✅ Successfully connected to MongoDB");
     
   } catch (error) {
-    console.error("❌ MongoDB connection failed:");
-    console.error("Error name:", error.name);
-    console.error("Error message:", error.message);
-    console.error("Error code:", error.code);
+    console.error("❌ MongoDB connection failed:", error.message);
     connectionError = error.message;
     isConnected = false;
   }
 }
 
-// Enhanced health check with detailed info
+// Health check endpoint
 app.get("/api/health", async (req, res) => {
   await connectDB();
   
@@ -87,25 +78,7 @@ app.get("/api/health", async (req, res) => {
     database: isConnected ? "connected" : "disconnected",
     mongodb_uri_exists: !!process.env.MONGODB_URI,
     connection_error: connectionError,
-    mongoose_ready_state: mongoose.connection.readyState,
-    environment_vars_count: Object.keys(process.env).length,
-    node_version: process.version
-  });
-});
-
-// Debug endpoint to check environment variables (without exposing sensitive data)
-app.get("/api/debug", async (req, res) => {
-  const envVars = Object.keys(process.env);
-  const mongoUriExists = process.env.MONGODB_URI ? true : false;
-  const mongoUriLength = process.env.MONGODB_URI ? process.env.MONGODB_URI.length : 0;
-  
-  res.json({
-    environment_variables_available: envVars.length,
-    mongodb_uri_exists: mongoUriExists,
-    mongodb_uri_length: mongoUriLength,
-    has_vercel_env: process.env.VERCEL ? true : false,
-    connection_attempts: connectionError ? 1 : 0,
-    last_error: connectionError
+    max_payload_size: "10mb"
   });
 });
 
@@ -133,7 +106,7 @@ app.get("/api/memories", async (req, res) => {
   }
 });
 
-// Create a memory
+// Create a memory with enhanced error handling
 app.post("/api/memories", async (req, res) => {
   try {
     await connectDB();
@@ -148,9 +121,21 @@ app.post("/api/memories", async (req, res) => {
 
     const { title, description, image_url, username, user_id } = req.body;
     
+    // Enhanced validation
     if (!title || !image_url || !username || !user_id) {
       return res.status(400).json({ 
-        error: "title, image_url, username, and user_id are required" 
+        error: "Missing required fields",
+        required: ["title", "image_url", "username", "user_id"],
+        received: { title: !!title, image_url: !!image_url, username: !!username, user_id: !!user_id }
+      });
+    }
+
+    // Check image_url size (if it's base64, it might be too large)
+    if (image_url.length > 1000000) { // 1MB limit for base64
+      return res.status(413).json({
+        error: "Image data too large",
+        message: "Please use a smaller image or an image URL instead of uploading large files",
+        size_limit: "1MB for base64 images"
       });
     }
 
@@ -166,10 +151,31 @@ app.post("/api/memories", async (req, res) => {
     });
     
     await memory.save();
+    console.log("✅ Memory created successfully for user:", username);
     res.status(201).json(memory);
+    
   } catch (err) {
     console.error("Error creating memory:", err);
-    res.status(500).json({ error: "Failed to create memory", details: err.message });
+    
+    // Handle specific MongoDB errors
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ 
+        error: "Validation failed", 
+        details: err.message 
+      });
+    }
+    
+    if (err.code === 11000) {
+      return res.status(409).json({ 
+        error: "Duplicate entry", 
+        details: err.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      error: "Failed to create memory", 
+      details: err.message 
+    });
   }
 });
 
@@ -180,8 +186,7 @@ app.delete("/api/memories/:id", async (req, res) => {
     
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
-        error: "Database not available", 
-        connection_error: connectionError
+        error: "Database not available"
       });
     }
 
@@ -203,8 +208,7 @@ app.post("/api/memories/:id/like", async (req, res) => {
     
     if (!isConnected || !Memory) {
       return res.status(503).json({ 
-        error: "Database not available", 
-        connection_error: connectionError
+        error: "Database not available"
       });
     }
 
