@@ -305,7 +305,7 @@ function handleImageUpload(event) {
     }
 }
 
-// Memory posting
+// Memory posting - FIXED VERSION
 async function handlePostMemory(event) {
     event.preventDefault();
     
@@ -330,37 +330,61 @@ async function handlePostMemory(event) {
     btnLoading.classList.remove('hidden');
     
     try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Check if server is available by testing the API endpoint
+        const testResponse = await fetch('/api/memories').catch(() => null);
         
-        // Validate inputs
-        if (!title || !imageUrl) {
-            throw new Error('Caption and image URL are required');
+        if (testResponse && testResponse.ok) {
+            // Use server API
+            const response = await fetch('/api/memories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    description,
+                    image_url: imageUrl,
+                    username: currentUser.username,
+                    user_id: currentUser.id
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to post to server');
+            }
+        } else {
+            // Fallback to localStorage (demo mode)
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Validate inputs
+            if (!title || !imageUrl) {
+                throw new Error('Caption and image URL are required');
+            }
+            
+            // Validate URL format
+            try {
+                new URL(imageUrl);
+            } catch {
+                throw new Error('Please enter a valid image URL');
+            }
+            
+            // Add new memory to localStorage
+            const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            const newMemory = {
+                id: Date.now(),
+                user_id: currentUser.id,
+                username: currentUser.username,
+                title,
+                description,
+                image_url: imageUrl,
+                likes: 0,
+                likedBy: [],
+                comments: [],
+                created_at: new Date().toISOString(),
+                avatar: currentUser.username.charAt(0).toUpperCase()
+            };
+            
+            memories.unshift(newMemory);
+            localStorage.setItem('demo_memories', JSON.stringify(memories));
         }
-        
-        // Validate URL format
-        try {
-            new URL(imageUrl);
-        } catch {
-            throw new Error('Please enter a valid image URL');
-        }
-        
-        // Add new memory
-        const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-        const newMemory = {
-            id: Date.now(),
-            user_id: currentUser.id,
-            username: currentUser.username,
-            title,
-            description,
-            image_url: imageUrl,
-            likes: 0,
-            created_at: new Date().toISOString(),
-            avatar: currentUser.username.charAt(0).toUpperCase()
-        };
-        
-        memories.unshift(newMemory);
-        localStorage.setItem('demo_memories', JSON.stringify(memories));
         
         // Reset form
         document.getElementById('memoryTitle').value = '';
@@ -369,11 +393,11 @@ async function handlePostMemory(event) {
         document.getElementById('memoryImageFile').value = '';
         
         // Reload memories and show success
-        loadMemories();
+        await loadMemories();
         showToast('Post shared successfully!', 'success');
         
     } catch (error) {
-        errorEl.textContent = error.message;
+        errorEl.textContent = error.message || 'Failed to post memory';
         errorEl.classList.remove('hidden');
     } finally {
         btnEl.disabled = false;
@@ -382,101 +406,139 @@ async function handlePostMemory(event) {
     }
 }
 
-// Load and display memories
-function loadMemories() {
-    const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+// Load and display memories - FIXED VERSION
+async function loadMemories() {
     const container = document.getElementById('memoriesContainer');
     
-    if (memories.length === 0) {
+    try {
+        // Try to load from server first
+        const response = await fetch("/api/memories").catch(() => null);
+        let memories = [];
+        
+        if (response && response.ok) {
+            memories = await response.json();
+            // Convert server format to match our display format
+            memories = memories.map(memory => ({
+                id: memory._id,
+                user_id: memory.user_id,
+                username: memory.username,
+                title: memory.title,
+                description: memory.description,
+                image_url: memory.image_url,
+                likes: memory.likes || 0,
+                likedBy: memory.likedBy || [],
+                comments: memory.comments || [],
+                created_at: memory.created_at,
+                avatar: memory.username.charAt(0).toUpperCase()
+            }));
+        } else {
+            // Fallback to localStorage
+            memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+        }
+        
+        if (memories.length === 0) {
+            container.innerHTML = `
+                <div class="memory-card">
+                    <div class="memory-content" style="text-align: center; padding: 40px;">
+                        <i class="fas fa-camera" style="font-size: 48px; color: var(--ig-text-secondary); margin-bottom: 16px;"></i>
+                        <h3>No posts yet</h3>
+                        <p style="color: var(--ig-text-secondary); margin-top: 8px;">Be the first to share a precious moment!</p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = memories.map(memory => {
+            const hasLiked = currentUser && memory.likedBy && memory.likedBy.includes(currentUser.id);
+            const heartIcon = hasLiked ? 'fas fa-heart' : 'far fa-heart';
+            const heartColor = hasLiked ? 'color: var(--ig-danger);' : '';
+            
+            return `
+            <div class="memory-card">
+                ${(currentUser && (currentUser.id === memory.user_id || currentUser.role === 'admin')) ? `
+                    <button class="delete-btn" onclick="deleteMemory('${memory.id}')" title="Delete post">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                ` : ''}
+                
+                <div class="memory-header">
+                    <div class="memory-avatar">${memory.avatar || memory.username.charAt(0).toUpperCase()}</div>
+                    <div class="memory-user-info">
+                        <div class="memory-username">${memory.username}</div>
+                        <div class="memory-date">${formatDate(memory.created_at)}</div>
+                    </div>
+                </div>
+                
+                <img 
+                    src="${memory.image_url}" 
+                    alt="${memory.title}"
+                    class="memory-image"
+                    onerror="this.src='https://via.placeholder.com/600x400/f0f0f0/999?text=Image+Not+Found'"
+                    loading="lazy"
+                />
+                
+                <div class="memory-actions">
+                    <button class="action-btn ${hasLiked ? 'liked' : ''}" onclick="toggleLike('${memory.id}')" style="${heartColor}">
+                        <i class="${heartIcon}"></i>
+                    </button>
+                    <button class="action-btn" onclick="showComments('${memory.id}')">
+                        <i class="far fa-comment"></i>
+                    </button>
+                    <button class="action-btn">
+                        <i class="far fa-paper-plane"></i>
+                    </button>
+                </div>
+                
+                <div class="memory-content">
+                    <div class="memory-likes">${memory.likes || 0} likes</div>
+                    <div class="memory-title">
+                        <span class="memory-username-inline">${memory.username}</span>
+                        ${memory.title}
+                    </div>
+                    ${memory.description ? `
+                        <div class="memory-description">${memory.description}</div>
+                    ` : ''}
+                    <div class="memory-comments" id="comments-${memory.id}">
+                        ${memory.comments && memory.comments.length > 0 ? `
+                            <div class="comments-list">
+                                ${memory.comments.slice(0, 2).map(comment => `
+                                    <div class="comment">
+                                        <span class="comment-username">${comment.username}</span>
+                                        <span class="comment-text">${comment.text}</span>
+                                    </div>
+                                `).join('')}
+                                ${memory.comments.length > 2 ? `
+                                    <div class="view-all-comments" onclick="showComments('${memory.id}')">
+                                        View all ${memory.comments.length} comments
+                                    </div>
+                                ` : ''}
+                            </div>
+                        ` : ''}
+                        ${currentUser ? `
+                            <div class="add-comment">
+                                <input type="text" placeholder="Add a comment..." class="comment-input" 
+                                       onkeypress="handleCommentSubmit(event, '${memory.id}')">
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error("Failed to load memories", error);
         container.innerHTML = `
             <div class="memory-card">
                 <div class="memory-content" style="text-align: center; padding: 40px;">
-                    <i class="fas fa-camera" style="font-size: 48px; color: var(--ig-text-secondary); margin-bottom: 16px;"></i>
-                    <h3>No posts yet</h3>
-                    <p style="color: var(--ig-text-secondary); margin-top: 8px;">Be the first to share a precious moment!</p>
+                    <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--ig-danger); margin-bottom: 16px;"></i>
+                    <h3>Failed to load posts</h3>
+                    <p style="color: var(--ig-text-secondary); margin-top: 8px;">Please try refreshing the page.</p>
                 </div>
             </div>
         `;
-        return;
     }
-
-    container.innerHTML = memories.map(memory => {
-        const hasLiked = currentUser && memory.likedBy && memory.likedBy.includes(currentUser.id);
-        const heartIcon = hasLiked ? 'fas fa-heart' : 'far fa-heart';
-        const heartColor = hasLiked ? 'color: var(--ig-danger);' : '';
-        
-        return `
-        <div class="memory-card">
-            ${(currentUser && (currentUser.id === memory.user_id || currentUser.role === 'admin')) ? `
-                <button class="delete-btn" onclick="deleteMemory(${memory.id})" title="Delete post">
-                    <i class="fas fa-trash"></i>
-                </button>
-            ` : ''}
-            
-            <div class="memory-header">
-                <div class="memory-avatar">${memory.avatar || memory.username.charAt(0).toUpperCase()}</div>
-                <div class="memory-user-info">
-                    <div class="memory-username">${memory.username}</div>
-                    <div class="memory-date">${formatDate(memory.created_at)}</div>
-                </div>
-            </div>
-            
-            <img 
-                src="${memory.image_url}" 
-                alt="${memory.title}"
-                class="memory-image"
-                onerror="this.src='https://via.placeholder.com/600x400/f0f0f0/999?text=Image+Not+Found'"
-                loading="lazy"
-            />
-            
-            <div class="memory-actions">
-                <button class="action-btn ${hasLiked ? 'liked' : ''}" onclick="toggleLike(${memory.id})" style="${heartColor}">
-                    <i class="${heartIcon}"></i>
-                </button>
-                <button class="action-btn" onclick="showComments(${memory.id})">
-                    <i class="far fa-comment"></i>
-                </button>
-                <button class="action-btn">
-                    <i class="far fa-paper-plane"></i>
-                </button>
-            </div>
-            
-            <div class="memory-content">
-                <div class="memory-likes">${memory.likes || 0} likes</div>
-                <div class="memory-title">
-                    <span class="memory-username-inline">${memory.username}</span>
-                    ${memory.title}
-                </div>
-                ${memory.description ? `
-                    <div class="memory-description">${memory.description}</div>
-                ` : ''}
-                <div class="memory-comments" id="comments-${memory.id}">
-                    ${memory.comments && memory.comments.length > 0 ? `
-                        <div class="comments-list">
-                            ${memory.comments.slice(0, 2).map(comment => `
-                                <div class="comment">
-                                    <span class="comment-username">${comment.username}</span>
-                                    <span class="comment-text">${comment.text}</span>
-                                </div>
-                            `).join('')}
-                            ${memory.comments.length > 2 ? `
-                                <div class="view-all-comments" onclick="showComments(${memory.id})">
-                                    View all ${memory.comments.length} comments
-                                </div>
-                            ` : ''}
-                        </div>
-                    ` : ''}
-                    ${currentUser ? `
-                        <div class="add-comment">
-                            <input type="text" placeholder="Add a comment..." class="comment-input" 
-                                   onkeypress="handleCommentSubmit(event, ${memory.id})">
-                        </div>
-                    ` : ''}
-                </div>
-            </div>
-        </div>
-        `;
-    }).join('');
 }
 
 // Comment functionality
@@ -492,7 +554,7 @@ function handleCommentSubmit(event, memoryId) {
     if (!commentText) return;
     
     const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memoryIndex = memories.findIndex(m => m.id === memoryId);
+    const memoryIndex = memories.findIndex(m => m.id == memoryId);
     
     if (memoryIndex !== -1) {
         if (!memories[memoryIndex].comments) {
@@ -515,9 +577,8 @@ function handleCommentSubmit(event, memoryId) {
 }
 
 function showComments(memoryId) {
-    // Simple implementation - could be expanded to show modal with all comments
     const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memory = memories.find(m => m.id === memoryId);
+    const memory = memories.find(m => m.id == memoryId);
     
     if (memory && memory.comments) {
         const commentsText = memory.comments.map(c => `${c.username}: ${c.text}`).join('\n');
@@ -536,7 +597,7 @@ async function deleteMemory(memoryId) {
     
     // Get memory details for permission check
     const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memory = memories.find(m => m.id === memoryId);
+    const memory = memories.find(m => m.id == memoryId);
     
     if (!memory) {
         showToast('Post not found!', 'error');
@@ -560,9 +621,16 @@ async function deleteMemory(memoryId) {
     }
     
     try {
-        // Remove memory from storage
-        const updatedMemories = memories.filter(m => m.id !== memoryId);
-        localStorage.setItem('demo_memories', JSON.stringify(updatedMemories));
+        // Try server delete first
+        const response = await fetch(`/api/memories/${memoryId}`, {
+            method: 'DELETE'
+        }).catch(() => null);
+        
+        if (!response || !response.ok) {
+            // Fallback to localStorage
+            const updatedMemories = memories.filter(m => m.id != memoryId);
+            localStorage.setItem('demo_memories', JSON.stringify(updatedMemories));
+        }
         
         // Reload memories and show success
         loadMemories();
@@ -582,7 +650,7 @@ function toggleLike(memoryId) {
     }
     
     const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memoryIndex = memories.findIndex(m => m.id === memoryId);
+    const memoryIndex = memories.findIndex(m => m.id == memoryId);
     
     if (memoryIndex !== -1) {
         const memory = memories[memoryIndex];
