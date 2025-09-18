@@ -1,51 +1,112 @@
-// server.js
-require("dotenv").config();
+// server.js - Vercel Serverless Compatible
 const express = require("express");
 const path = require("path");
 const mongoose = require("mongoose");
-const Memory = require("./models/Memory");
 
 const app = express();
 app.use(express.json());
 
-// Serve static files from views directory (where your HTML, CSS, JS are)
-app.use(express.static(path.join(__dirname, "views")));
+// Serve static files from public directory (Vercel expects this structure)
+app.use(express.static(path.join(__dirname, "public")));
 
-// Connect to MongoDB
-const mongoUri = process.env.MONGODB_URI;
-if (!mongoUri) {
-  console.error("MONGODB_URI not set. Add it to .env or Vercel env vars.");
-  process.exit(1);
-}
-
-mongoose.connect(mongoUri)
-.then(() => console.log("✅ Connected to MongoDB"))
-.catch(err => {
-  console.error("❌ MongoDB connection error:", err);
-  process.exit(1);
+// Memory Schema (inline since Vercel has issues with relative imports)
+const memorySchema = new mongoose.Schema({
+  user_id: { type: Number, required: true },
+  username: { type: String, required: true },
+  title: { type: String, required: true },
+  description: { type: String, default: '' },
+  image_url: { type: String, required: true },
+  likes: { type: Number, default: 0 },
+  likedBy: { type: [Number], default: [] },
+  comments: { 
+    type: [{
+      userId: { type: Number, required: true },
+      username: { type: String, required: true },
+      text: { type: String, required: true },
+      created_at: { type: Date, default: Date.now }
+    }], 
+    default: [] 
+  },
+  created_at: { type: Date, default: Date.now }
 });
+
+// Add indexes for better performance
+memorySchema.index({ created_at: -1 });
+memorySchema.index({ user_id: 1 });
+
+let Memory;
+let isConnected = false;
+
+// MongoDB connection function
+async function connectDB() {
+  if (isConnected) {
+    return;
+  }
+
+  try {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+      console.log("No MONGODB_URI found, API will return errors (app works in demo mode)");
+      return;
+    }
+
+    await mongoose.connect(mongoUri);
+    Memory = mongoose.model("Memory", memorySchema);
+    isConnected = true;
+    console.log("✅ Connected to MongoDB");
+  } catch (error) {
+    console.error("❌ MongoDB connection error:", error.message);
+    isConnected = false;
+  }
+}
 
 // --- API endpoints ---
 
 // Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Server is running" });
+app.get("/api/health", async (req, res) => {
+  await connectDB();
+  res.json({ 
+    status: "ok", 
+    message: "Server is running",
+    database: isConnected ? "connected" : "disconnected"
+  });
 });
 
 // Get all memories (newest first)
 app.get("/api/memories", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const memories = await Memory.find().sort({ created_at: -1 }).limit(100);
     res.json(memories);
   } catch (err) {
     console.error("Error fetching memories:", err);
-    res.status(500).json({ error: "Failed to fetch memories" });
+    res.status(500).json({ 
+      error: "Failed to fetch memories",
+      message: "Database error - app will use localStorage instead"
+    });
   }
 });
 
 // Create a memory
 app.post("/api/memories", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const { title, description, image_url, username, user_id } = req.body;
     
     // Validation
@@ -78,6 +139,15 @@ app.post("/api/memories", async (req, res) => {
 // Delete memory by id
 app.delete("/api/memories/:id", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const deleted = await Memory.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: "Memory not found" });
@@ -92,6 +162,15 @@ app.delete("/api/memories/:id", async (req, res) => {
 // Like/unlike memory
 app.post("/api/memories/:id/like", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const { userId } = req.body;
     
     if (!userId) {
@@ -127,6 +206,15 @@ app.post("/api/memories/:id/like", async (req, res) => {
 // Add comment to memory
 app.post("/api/memories/:id/comments", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const { text, username, userId } = req.body;
     
     if (!text || !username || !userId) {
@@ -160,6 +248,15 @@ app.post("/api/memories/:id/comments", async (req, res) => {
 // Get memory by id
 app.get("/api/memories/:id", async (req, res) => {
   try {
+    await connectDB();
+    
+    if (!isConnected || !Memory) {
+      return res.status(503).json({ 
+        error: "Database not available", 
+        message: "App is running in demo mode using localStorage" 
+      });
+    }
+
     const memory = await Memory.findById(req.params.id);
     if (!memory) {
       return res.status(404).json({ error: "Memory not found" });
@@ -178,28 +275,8 @@ app.get("*", (req, res) => {
     return res.status(404).end();
   }
   
-  res.sendFile(path.join(__dirname, "views", "index.html"));
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
-
-// Handle server startup errors
-server.on("error", err => {
-  if (err.code === "EADDRINUSE") {
-    console.warn(`Port ${PORT} in use; trying a random port...`);
-    const newServer = app.listen(0, () => {
-      console.log(`🚀 Server restarted on port ${newServer.address().port}`);
-    });
-  } else {
-    throw err;
-  }
-});
+// Export for Vercel
+module.exports = app;
