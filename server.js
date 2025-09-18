@@ -3,25 +3,37 @@ const path = require("path");
 
 const app = express();
 
-// ✅ Serve static files (CSS, JS, images)
-app.use(express.static(__dirname));
+// ✅ Serve static files (CSS, JS, images) from root
+app.use(express.static(path.join(__dirname)));
 
-// ✅ Example API route to test backend
+// ✅ API test route
 app.get("/api/test", (req, res) => {
   res.json({ message: "✅ Backend is working!" });
 });
 
-// ✅ Catch-all route for SPA (only when not requesting files)
+// ✅ Catch-all route for SPA (only when not requesting a file)
 app.get("*", (req, res) => {
   if (path.extname(req.path)) {
-    // If the path has a file extension (.css, .js, .png), don't hijack it
+    // If it's a file request (like .css, .js), skip
     res.status(404).end();
-  } else {
-    res.sendFile(path.join(__dirname, "index.html"));
+    return;
   }
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
+
+// ✅ Auto-select new port if 3000 is busy
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.log(`⚠️ Port ${PORT} is busy, trying another port...`);
+    app.listen(0, () => {
+      console.log(`✅ Server restarted at http://localhost:${server.address().port}`);
+    });
+  } else {
+    throw err;
+  }
 });
