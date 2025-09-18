@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memories - Share Your Precious Moments</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Grand+Hotel&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <div class="nav-brand">
+                <h1 class="logo">Memories</h1>
+            </div>
+            
+            <div class="nav-center">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search">
+                </div>
+            </div>
+            
+            <div class="nav-links">
+                <span id="adminLink" class="hidden">
+                    <button class="nav-icon" onclick="showAdminPanel()" title="Admin Panel">
+                        <i class="fas fa-crown"></i>
+                    </button>
+                </span>
+                <span id="userWelcome" class="user-welcome hidden">
+                    <div class="user-avatar">
+                        <span id="userInitial">G</span>
+                    </div>
+                    <span class="username" id="username">Guest</span>
+                </span>
+                <button id="logoutBtn" class="nav-icon hidden" onclick="logout()" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+                <button id="loginBtn" class="btn-login" onclick="showLoginForm()">Log In</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Welcome Hero Section -->
+        <div id="heroSection" class="hero-section">
+            <div class="hero-phone">
+                <div class="phone-mockup">
+                    <div class="phone-screen">
+                        <div class="demo-post">
+                            <div class="demo-header">
+                                <div class="demo-avatar"></div>
+                                <div class="demo-info">
+                                    <div class="demo-username"></div>
+                                    <div class="demo-location"></div>
+                                </div>
+                            </div>
+                            <div class="demo-image"></div>
+                            <div class="demo-actions">
+                                <div class="demo-icons">
+                                    <div class="demo-icon"></div>
+                                    <div class="demo-icon"></div>
+                                    <div class="demo-icon"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hero-content">
+                <h1 class="hero-logo">Memories</h1>
+                <p class="hero-subtitle">Sign up to see photos and videos from your friends.</p>
+                
+                <div class="hero-actions">
+                    <button class="btn btn-primary btn-full" onclick="showRegisterForm()">
+                        Sign up
+                    </button>
+                </div>
+                
+                <div class="divider">
+                    <div class="divider-line"></div>
+                    <span class="divider-text">OR</span>
+                    <div class="divider-line"></div>
+                </div>
+                
+                <p class="signin-link">
+                    Have an account? <button class="link-btn" onclick="showLoginForm()">Log in</button>
+                </p>
+            </div>
+        </div>
+
+        <!-- Login Form -->
+        <div class="auth-container hidden" id="loginForm">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1 class="auth-logo">Memories</h1>
+                </div>
+                
+                <form class="auth-form" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <input type="text" id="loginUsername" placeholder="Username" class="form-input" required>
+                    </div>
+
+                    <div class="form-group">
+                        <input type="password" id="loginPassword" placeholder="Password" class="form-input" required>
+                    </div>
+
+                    <div id="loginError" class="error-message hidden"></div>
+
+                    <button type="submit" class="btn btn-primary btn-full" id="loginSubmitBtn">
+                        <span class="btn-text">Log in</span>
+                        <span class="btn-loading hidden">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </span>
+                    </button>
+                </form>
+
+                <div class="forgot-password">
+                    <button class="link-btn">Forgot password?</button>
+                </div>
+
+
+            </div>
+            
+            <div class="auth-card auth-secondary">
+                <p>Don't have an account? <button class="link-btn" onclick="showRegisterForm()">Sign up</button></p>
+            </div>
+            
+            <div class="auth-footer">
+                <button class="link-btn" onclick="showHome()">← Back to Home</button>
+            </div>
+        </div>
+
+        <!-- Register Form -->
+        <div class="auth-container hidden" id="registerForm">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1 class="auth-logo">Memories</h1>
+                    <p class="auth-subtitle">Sign up to see photos and videos from your friends.</p>
+                </div>
+                
+                <form class="auth-form" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <input type="email" id="registerEmail" placeholder="Email" class="form-input" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <input type="text" id="registerUsername" placeholder="Username" class="form-input" required>
+                    </div>
+
+                    <div class="form-group">
+                        <input type="password" id="registerPassword" placeholder="Password" class="form-input" required>
+                    </div>
+
+                    <div id="registerError" class="error-message hidden"></div>
+                    <div id="registerSuccess" class="success-message hidden"></div>
+
+                    <button type="submit" class="btn btn-primary btn-full" id="registerSubmitBtn">
+                        <span class="btn-text">Sign up</span>
+                        <span class="btn-loading hidden">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </span>
+                    </button>
+                </form>
+                
+                <p class="terms-text">
+                    By signing up, you agree to our Terms and Privacy Policy.
+                </p>
+            </div>
+            
+            <div class="auth-card auth-secondary">
+                <p>Have an account? <button class="link-btn" onclick="showLoginForm()">Log in</button></p>
+            </div>
+            
+            <div class="auth-footer">
+                <button class="link-btn" onclick="showHome()">← Back to Home</button>
+            </div>
+        </div>
+
+        <!-- Stories Section (when logged in) -->
+        <div class="stories-section hidden" id="storiesSection">
+            <div class="stories-container">
+                <div class="story-item add-story">
+                    <div class="story-avatar">
+                        <i class="fas fa-plus"></i>
+                    </div>
+                    <span class="story-label">Your story</span>
+                </div>
+                
+                <div class="story-item">
+                    <div class="story-avatar" style="background: linear-gradient(45deg, #f09433, #e6683c);">
+                        <span>A</span>
+                    </div>
+                    <span class="story-label">admin</span>
+                </div>
+                
+                <div class="story-item">
+                    <div class="story-avatar" style="background: linear-gradient(45deg, #833ab4, #fd1d1d);">
+                        <span>M</span>
+                    </div>
+                    <span class="story-label">member</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Post Form -->
+        <div class="post-section hidden" id="postSection">
+            <div class="post-card">
+                <form class="post-form" onsubmit="handlePostMemory(event)">
+                    <div class="post-header">
+                        <div class="post-user">
+                            <div class="post-avatar">
+                                <span id="postUserInitial">U</span>
+                            </div>
+                            <div class="post-info">
+                                <span class="post-username" id="postUsername">Username</span>
+                                <span class="post-action">Create new post</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <input type="text" id="memoryTitle" placeholder="Write a caption..." class="form-input caption-input" required>
+                    </div>
+
+                    <div class="form-group">
+                        <textarea id="memoryDescription" placeholder="Add more details (optional)..." class="form-textarea" rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="memoryImage">Upload Image</label>
+                        <div class="image-upload-container">
+                            <input type="file" id="memoryImageFile" accept="image/*" class="file-input" onchange="handleImageUpload(event)">
+                            <input type="url" id="memoryImage" placeholder="Or paste image URL" class="form-input" required>
+                            <button type="button" class="btn btn-outline upload-btn" onclick="triggerFileUpload()">
+                                <i class="fas fa-upload"></i>
+                                Choose Image
+                            </button>
+                        </div>
+                        <small class="form-help">
+                            <i class="fas fa-info-circle"></i>
+                            Upload from device or paste an image URL
+                        </small>
+                    </div>
+
+                    <div id="postError" class="error-message hidden"></div>
+
+                    <button type="submit" class="btn btn-primary btn-full" id="postBtn">
+                        <span class="btn-text">Share</span>
+                        <span class="btn-loading hidden">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- No Permission Message -->
+        <div class="no-permission hidden" id="noPermission">
+            <div class="permission-card">
+                <div class="permission-icon">
+                    <i class="fas fa-lock"></i>
+                </div>
+                <h3>Posting Permission Required</h3>
+                <p>Your account is pending admin approval to post content. Once approved by an administrator, you'll be able to share your memories with the community.</p>
+                <button class="btn btn-outline" onclick="location.reload()">
+                    <i class="fas fa-refresh"></i>
+                    Refresh Status
+                </button>
+            </div>
+        </div>
+
+        <!-- Admin Panel -->
+        <div class="admin-panel hidden" id="adminPanel">
+            <div class="admin-header">
+                <button class="btn btn-outline btn-sm back-btn" onclick="showHome()">
+                    <i class="fas fa-arrow-left"></i>
+                    Back
+                </button>
+                <div class="admin-title">
+                    <h2><i class="fas fa-crown"></i> User Management</h2>
+                    <p>Manage user permissions and monitor community activity</p>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="loadAdminData()">
+                    <i class="fas fa-refresh"></i>
+                    Refresh
+                </button>
+            </div>
+
+            <div id="adminError" class="error-message hidden"></div>
+            <div id="adminSuccess" class="success-message hidden"></div>
+
+            <div class="admin-stats">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="totalUsers">0</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-user-check"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="activePosters">0</div>
+                        <div class="stat-label">Can Post</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-images"></i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-number" id="totalMemories">0</div>
+                        <div class="stat-label">Total Posts</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-table-container">
+                <div class="table-header">
+                    <h3><i class="fas fa-users"></i> Users</h3>
+                </div>
+                
+                <div class="table-wrapper">
+                    <table class="users-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Post Permission</th>
+                                <th>Joined</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="6" class="loading-cell">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Loading users...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memories Feed -->
+        <div class="memories-section" id="memoriesSection">
+            <div id="memoriesContainer" class="memories-feed">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading posts...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast hidden">
+        <div class="toast-content">
+            <i class="toast-icon"></i>
+            <span id="toastMessage"></span>
+        </div>
+        <button id="toastClose" class="toast-close" onclick="hideToast()">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

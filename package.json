@@ -1,0 +1,40 @@
+{
+  "name": "memories-instagram-app",
+  "version": "1.0.0",
+  "description": "An Instagram-style memory sharing application with modern UI and responsive design",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "memories",
+    "instagram",
+    "social-media",
+    "photos",
+    "responsive",
+    "modern-ui",
+    "express-backend",
+    "pwa-ready"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/memories-instagram-app.git"
+  },
+  "homepage": "https://your-memories-app.vercel.app",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "browserslist": [
+    "defaults",
+    "not ie 11",
+    "not op_mini all",
+    "last 2 versions"
+  ],
+  "dependencies": {
+  "express": "^4.18.2"
+}
+
+}
