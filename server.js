@@ -1,29 +1,27 @@
-// server.js
 const express = require("express");
 const path = require("path");
 
 const app = express();
 
-// ✅ Serve static files from current directory
+// ✅ Serve static files (CSS, JS, images)
 app.use(express.static(__dirname));
 
-// ✅ API route (for testing backend)
+// ✅ Example API route to test backend
 app.get("/api/test", (req, res) => {
   res.json({ message: "✅ Backend is working!" });
 });
 
-// ✅ Catch-all route (only for SPA routes, not files)
+// ✅ Catch-all route for SPA (only when not requesting files)
 app.get("*", (req, res) => {
   if (path.extname(req.path)) {
-    // If it's a file request (.css, .js, .png, etc.), skip
+    // If the path has a file extension (.css, .js, .png), don't hijack it
     res.status(404).end();
-    return;
+  } else {
+    res.sendFile(path.join(__dirname, "index.html"));
   }
-  res.sendFile(path.join(__dirname, "index.html"));
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
