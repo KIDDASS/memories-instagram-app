@@ -305,7 +305,7 @@ function handleImageUpload(event) {
     }
 }
 
-// Memory posting - FIXED VERSION
+// Memory posting
 async function handlePostMemory(event) {
     event.preventDefault();
     
@@ -348,7 +348,8 @@ async function handlePostMemory(event) {
             });
             
             if (!response.ok) {
-                throw new Error('Failed to post to server');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to post to server');
             }
         } else {
             // Fallback to localStorage (demo mode)
@@ -406,7 +407,7 @@ async function handlePostMemory(event) {
     }
 }
 
-// Load and display memories - FIXED VERSION
+// Load and display memories
 async function loadMemories() {
     const container = document.getElementById('memoriesContainer');
     
@@ -417,23 +418,11 @@ async function loadMemories() {
         
         if (response && response.ok) {
             memories = await response.json();
-            // Convert server format to match our display format
-            memories = memories.map(memory => ({
-                id: memory._id,
-                user_id: memory.user_id,
-                username: memory.username,
-                title: memory.title,
-                description: memory.description,
-                image_url: memory.image_url,
-                likes: memory.likes || 0,
-                likedBy: memory.likedBy || [],
-                comments: memory.comments || [],
-                created_at: memory.created_at,
-                avatar: memory.username.charAt(0).toUpperCase()
-            }));
+            console.log('Loaded from server:', memories.length, 'memories');
         } else {
             // Fallback to localStorage
             memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            console.log('Loaded from localStorage:', memories.length, 'memories');
         }
         
         if (memories.length === 0) {
@@ -450,20 +439,22 @@ async function loadMemories() {
         }
 
         container.innerHTML = memories.map(memory => {
+            // Use the correct ID field (MongoDB uses _id, localStorage uses id)
+            const memoryId = memory._id || memory.id;
             const hasLiked = currentUser && memory.likedBy && memory.likedBy.includes(currentUser.id);
             const heartIcon = hasLiked ? 'fas fa-heart' : 'far fa-heart';
             const heartColor = hasLiked ? 'color: var(--ig-danger);' : '';
             
             return `
-            <div class="memory-card">
+            <div class="memory-card" data-memory-id="${memoryId}">
                 ${(currentUser && (currentUser.id === memory.user_id || currentUser.role === 'admin')) ? `
-                    <button class="delete-btn" onclick="deleteMemory('${memory.id}')" title="Delete post">
+                    <button class="delete-btn" onclick="deleteMemory('${memoryId}')" title="Delete post">
                         <i class="fas fa-trash"></i>
                     </button>
                 ` : ''}
                 
                 <div class="memory-header">
-                    <div class="memory-avatar">${memory.avatar || memory.username.charAt(0).toUpperCase()}</div>
+                    <div class="memory-avatar">${memory.username.charAt(0).toUpperCase()}</div>
                     <div class="memory-user-info">
                         <div class="memory-username">${memory.username}</div>
                         <div class="memory-date">${formatDate(memory.created_at)}</div>
@@ -479,10 +470,10 @@ async function loadMemories() {
                 />
                 
                 <div class="memory-actions">
-                    <button class="action-btn ${hasLiked ? 'liked' : ''}" onclick="toggleLike('${memory.id}')" style="${heartColor}">
+                    <button class="action-btn ${hasLiked ? 'liked' : ''}" onclick="toggleLike('${memoryId}')" style="${heartColor}">
                         <i class="${heartIcon}"></i>
                     </button>
-                    <button class="action-btn" onclick="showComments('${memory.id}')">
+                    <button class="action-btn" onclick="showComments('${memoryId}')">
                         <i class="far fa-comment"></i>
                     </button>
                     <button class="action-btn">
@@ -499,7 +490,7 @@ async function loadMemories() {
                     ${memory.description ? `
                         <div class="memory-description">${memory.description}</div>
                     ` : ''}
-                    <div class="memory-comments" id="comments-${memory.id}">
+                    <div class="memory-comments" id="comments-${memoryId}">
                         ${memory.comments && memory.comments.length > 0 ? `
                             <div class="comments-list">
                                 ${memory.comments.slice(0, 2).map(comment => `
@@ -509,7 +500,7 @@ async function loadMemories() {
                                     </div>
                                 `).join('')}
                                 ${memory.comments.length > 2 ? `
-                                    <div class="view-all-comments" onclick="showComments('${memory.id}')">
+                                    <div class="view-all-comments" onclick="showComments('${memoryId}')">
                                         View all ${memory.comments.length} comments
                                     </div>
                                 ` : ''}
@@ -518,7 +509,7 @@ async function loadMemories() {
                         ${currentUser ? `
                             <div class="add-comment">
                                 <input type="text" placeholder="Add a comment..." class="comment-input" 
-                                       onkeypress="handleCommentSubmit(event, '${memory.id}')">
+                                       onkeypress="handleCommentSubmit(event, '${memoryId}')">
                             </div>
                         ` : ''}
                     </div>
@@ -541,8 +532,82 @@ async function loadMemories() {
     }
 }
 
+// FIXED Delete memory functionality
+async function deleteMemory(memoryId) {
+    if (!currentUser) {
+        showToast('Please sign in to delete posts!', 'error');
+        return;
+    }
+    
+    console.log('Attempting to delete memory with ID:', memoryId);
+    
+    try {
+        let memory = null;
+        let isServerMemory = false;
+        
+        // First try to get the memory from server
+        const getResponse = await fetch(`/api/memories/${memoryId}`).catch(() => null);
+        if (getResponse && getResponse.ok) {
+            memory = await getResponse.json();
+            isServerMemory = true;
+        } else {
+            // Fallback to localStorage
+            const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            memory = memories.find(m => m.id == memoryId || m._id == memoryId);
+            isServerMemory = false;
+        }
+        
+        if (!memory) {
+            showToast('Post not found!', 'error');
+            return;
+        }
+        
+        // Check permissions
+        const canDelete = currentUser.role === 'admin' || memory.user_id == currentUser.id;
+        if (!canDelete) {
+            showToast('You can only delete your own posts!', 'error');
+            return;
+        }
+        
+        // Confirm deletion
+        const isOwnPost = memory.user_id == currentUser.id;
+        const confirmMessage = isOwnPost 
+            ? 'Are you sure you want to delete this post?' 
+            : `Are you sure you want to delete @${memory.username}'s post?`;
+        
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        // Delete from appropriate storage
+        if (isServerMemory) {
+            const deleteResponse = await fetch(`/api/memories/${memoryId}`, {
+                method: 'DELETE'
+            });
+            
+            if (!deleteResponse.ok) {
+                throw new Error('Failed to delete from server');
+            }
+        } else {
+            // Delete from localStorage
+            const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            const updatedMemories = memories.filter(m => m.id != memoryId && m._id != memoryId);
+            localStorage.setItem('demo_memories', JSON.stringify(updatedMemories));
+        }
+        
+        // Reload memories and show success
+        await loadMemories();
+        const action = isOwnPost ? 'Your post has been deleted' : 'Post deleted successfully';
+        showToast(action, 'success');
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        showToast('Failed to delete post. Please try again.', 'error');
+    }
+}
+
 // Comment functionality
-function handleCommentSubmit(event, memoryId) {
+async function handleCommentSubmit(event, memoryId) {
     if (event.key !== 'Enter') return;
     
     if (!currentUser) {
@@ -553,129 +618,103 @@ function handleCommentSubmit(event, memoryId) {
     const commentText = event.target.value.trim();
     if (!commentText) return;
     
-    const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memoryIndex = memories.findIndex(m => m.id == memoryId);
-    
-    if (memoryIndex !== -1) {
-        if (!memories[memoryIndex].comments) {
-            memories[memoryIndex].comments = [];
-        }
-        
-        memories[memoryIndex].comments.push({
-            id: Date.now(),
-            userId: currentUser.id,
-            username: currentUser.username,
-            text: commentText,
-            created_at: new Date().toISOString()
-        });
-        
-        localStorage.setItem('demo_memories', JSON.stringify(memories));
-        event.target.value = '';
-        loadMemories();
-        showToast('Comment added!', 'success');
-    }
-}
-
-function showComments(memoryId) {
-    const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memory = memories.find(m => m.id == memoryId);
-    
-    if (memory && memory.comments) {
-        const commentsText = memory.comments.map(c => `${c.username}: ${c.text}`).join('\n');
-        alert(`Comments on this post:\n\n${commentsText}`);
-    } else {
-        alert('No comments yet. Be the first to comment!');
-    }
-}
-
-// Delete memory functionality
-async function deleteMemory(memoryId) {
-    if (!currentUser) {
-        showToast('Please sign in to delete posts!', 'error');
-        return;
-    }
-    
-    // Get memory details for permission check
-    const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memory = memories.find(m => m.id == memoryId);
-    
-    if (!memory) {
-        showToast('Post not found!', 'error');
-        return;
-    }
-    
-    // Check permissions: user can delete own posts, admin can delete any post
-    if (memory.user_id !== currentUser.id && currentUser.role !== 'admin') {
-        showToast('You can only delete your own posts!', 'error');
-        return;
-    }
-    
-    // Confirm deletion
-    const isOwnPost = memory.user_id === currentUser.id;
-    const confirmMessage = isOwnPost 
-        ? 'Are you sure you want to delete this post?' 
-        : `Are you sure you want to delete @${memory.username}'s post?`;
-    
-    if (!confirm(confirmMessage)) {
-        return;
-    }
-    
     try {
-        // Try server delete first
-        const response = await fetch(`/api/memories/${memoryId}`, {
-            method: 'DELETE'
+        // Try server comment API first
+        const response = await fetch(`/api/memories/${memoryId}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: commentText,
+                username: currentUser.username,
+                userId: currentUser.id
+            })
         }).catch(() => null);
         
         if (!response || !response.ok) {
             // Fallback to localStorage
-            const updatedMemories = memories.filter(m => m.id != memoryId);
-            localStorage.setItem('demo_memories', JSON.stringify(updatedMemories));
+            const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            const memoryIndex = memories.findIndex(m => m.id == memoryId || m._id == memoryId);
+            
+            if (memoryIndex !== -1) {
+                if (!memories[memoryIndex].comments) {
+                    memories[memoryIndex].comments = [];
+                }
+                
+                memories[memoryIndex].comments.push({
+                    id: Date.now(),
+                    userId: currentUser.id,
+                    username: currentUser.username,
+                    text: commentText,
+                    created_at: new Date().toISOString()
+                });
+                
+                localStorage.setItem('demo_memories', JSON.stringify(memories));
+            }
         }
         
-        // Reload memories and show success
+        event.target.value = '';
         loadMemories();
-        const action = isOwnPost ? 'Your post has been deleted' : 'Post deleted successfully';
-        showToast(action, 'success');
+        showToast('Comment added!', 'success');
         
     } catch (error) {
-        showToast('Failed to delete post. Please try again.', 'error');
+        console.error('Comment error:', error);
+        showToast('Failed to add comment', 'error');
     }
 }
 
+function showComments(memoryId) {
+    // For now, just reload to show comments inline
+    alert('Comments are shown below each post. Full modal view coming soon!');
+}
+
 // Like functionality
-function toggleLike(memoryId) {
+async function toggleLike(memoryId) {
     if (!currentUser) {
         showToast('Please sign in to like posts!', 'error');
         return;
     }
     
-    const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
-    const memoryIndex = memories.findIndex(m => m.id == memoryId);
-    
-    if (memoryIndex !== -1) {
-        const memory = memories[memoryIndex];
+    try {
+        // Try server like API first
+        const response = await fetch(`/api/memories/${memoryId}/like`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id })
+        }).catch(() => null);
         
-        // Initialize likes array if it doesn't exist
-        if (!memory.likedBy) {
-            memory.likedBy = [];
+        if (!response || !response.ok) {
+            // Fallback to localStorage
+            const memories = JSON.parse(localStorage.getItem('demo_memories') || '[]');
+            const memoryIndex = memories.findIndex(m => m.id == memoryId || m._id == memoryId);
+            
+            if (memoryIndex !== -1) {
+                const memory = memories[memoryIndex];
+                
+                if (!memory.likedBy) {
+                    memory.likedBy = [];
+                }
+                
+                const hasLiked = memory.likedBy.includes(currentUser.id);
+                
+                if (hasLiked) {
+                    memory.likedBy = memory.likedBy.filter(userId => userId !== currentUser.id);
+                    memory.likes = Math.max(0, (memory.likes || 0) - 1);
+                    showToast('Unliked!', 'info');
+                } else {
+                    memory.likedBy.push(currentUser.id);
+                    memory.likes = (memory.likes || 0) + 1;
+                    showToast('Liked!', 'success');
+                }
+                
+                localStorage.setItem('demo_memories', JSON.stringify(memories));
+            }
         }
         
-        const hasLiked = memory.likedBy.includes(currentUser.id);
-        
-        if (hasLiked) {
-            // Unlike: remove user from likedBy array and decrease count
-            memory.likedBy = memory.likedBy.filter(userId => userId !== currentUser.id);
-            memory.likes = Math.max(0, (memory.likes || 0) - 1);
-            showToast('Unliked!', 'info');
-        } else {
-            // Like: add user to likedBy array and increase count
-            memory.likedBy.push(currentUser.id);
-            memory.likes = (memory.likes || 0) + 1;
-            showToast('Liked!', 'success');
-        }
-        
-        localStorage.setItem('demo_memories', JSON.stringify(memories));
         loadMemories();
+        
+    } catch (error) {
+        console.error('Like error:', error);
+        showToast('Failed to update like', 'error');
     }
 }
 
@@ -746,10 +785,8 @@ async function togglePermission(userId, currentPermission) {
     successEl.classList.add('hidden');
     
     try {
-        // Simulate API call
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Update user permission
         const users = JSON.parse(localStorage.getItem('demo_users') || '[]');
         const userIndex = users.findIndex(u => u.id === userId);
         
@@ -757,7 +794,6 @@ async function togglePermission(userId, currentPermission) {
             users[userIndex].can_post = !currentPermission;
             localStorage.setItem('demo_users', JSON.stringify(users));
             
-            // Update current user if it's the same user
             if (currentUser && currentUser.id === userId) {
                 currentUser.can_post = !currentPermission;
                 localStorage.setItem('current_user', JSON.stringify(currentUser));
@@ -770,8 +806,6 @@ async function togglePermission(userId, currentPermission) {
             successEl.classList.remove('hidden');
             
             loadAdminData();
-            
-            // Hide success message after 3 seconds
             setTimeout(() => successEl.classList.add('hidden'), 3000);
         } else {
             throw new Error('User not found');
@@ -813,7 +847,6 @@ function showToast(message, type = 'info') {
     const toastMessage = document.getElementById('toastMessage');
     const toastIcon = toast.querySelector('.toast-icon');
     
-    // Set icon based on type
     let iconClass = 'fas fa-info-circle';
     if (type === 'success') iconClass = 'fas fa-check-circle';
     if (type === 'error') iconClass = 'fas fa-exclamation-circle';
@@ -823,7 +856,6 @@ function showToast(message, type = 'info') {
     toastMessage.textContent = message;
     toast.classList.remove('hidden');
     
-    // Auto hide after 3 seconds
     setTimeout(() => {
         hideToast();
     }, 3000);
@@ -833,13 +865,12 @@ function hideToast() {
     document.getElementById('toast').classList.add('hidden');
 }
 
-// Search functionality (placeholder)
+// Search functionality
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.querySelector('.search-box input');
     if (searchInput) {
         searchInput.addEventListener('input', function(e) {
             const query = e.target.value.toLowerCase();
-            // Placeholder for search functionality
             console.log('Searching for:', query);
         });
     }
@@ -847,14 +878,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
-    // ESC to close modals/forms
     if (e.key === 'Escape') {
         if (currentUser) {
             showHome();
         }
     }
     
-    // Ctrl/Cmd + / for search focus
     if ((e.ctrlKey || e.metaKey) && e.key === '/') {
         e.preventDefault();
         const searchInput = document.querySelector('.search-box input');
