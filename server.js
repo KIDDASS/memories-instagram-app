@@ -14,13 +14,14 @@ app.get("/api/test", (req, res) => {
 
 // ✅ Catch-all route (only for SPA routes, not files)
 app.get("*", (req, res) => {
-  // If the request has a file extension (.css, .js, .png), skip
   if (path.extname(req.path)) {
+    // If it's a file request (.css, .js, .png, etc.), skip
     res.status(404).end();
     return;
   }
   res.sendFile(path.join(__dirname, "index.html"));
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
